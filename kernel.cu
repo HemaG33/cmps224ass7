@@ -7,37 +7,57 @@
 
 __global__ void scan_kernel(float* input, float* output, float* partialSums, unsigned int N) {
 
-    // TODO
+     __shared__ float temp[2 * BLOCK_DIM];
 
+    unsigned int start = 2 * blockIdx.x * blockDim.x;
 
+    // Load data into shared memory
+    if (start + threadIdx.x < N)
+        temp[threadIdx.x] = input[start + threadIdx.x];
+    else
+        temp[threadIdx.x] = 0;
+    if (start + blockDim.x + threadIdx.x < N)
+        temp[blockDim.x + threadIdx.x] = input[start + blockDim.x + threadIdx.x];
+    else
+        temp[blockDim.x + threadIdx.x] = 0;
 
+    // Reduction phase
+    for (unsigned int stride = 1; stride <= blockDim.x; stride *= 2) {
+        __syncthreads();
+        int index = (threadIdx.x + 1) * 2 * stride - 1;
+        if (index < 2 * blockDim.x)
+            temp[index] += temp[index - stride];
+    }
 
+    // Post reduction reverse phase
+    for (int stride = BLOCK_DIM / 2; stride > 0; stride /= 2) {
+        __syncthreads();
+        int index = (threadIdx.x + 1) * 2 * stride - 1;
+        if (index + stride < 2 * blockDim.x)
+            temp[index + stride] += temp[index];
+    }
+    __syncthreads();
 
+    // Write to output and compute partial sums
+    if (start + threadIdx.x < N)
+        output[start + threadIdx.x] = temp[threadIdx.x];
+    if (start + blockDim.x + threadIdx.x < N)
+        output[start + blockDim.x + threadIdx.x] = temp[blockDim.x + threadIdx.x];
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+    if (partialSums && threadIdx.x == 0)
+        partialSums[blockIdx.x] = temp[2 * blockDim.x - 1];
 
 }
 
 __global__ void add_kernel(float* output, float* partialSums, unsigned int N) {
 
-    // TODO
+    unsigned int start = 2 * blockDim.x * blockIdx.x;
 
-
-
-
-
+    // Add partial sum to each element
+    if (start + threadIdx.x < N)
+        output[start + threadIdx.x] += partialSums[blockIdx.x];
+    if (start + blockDim.x + threadIdx.x < N)
+        output[start + blockDim.x + threadIdx.x] += partialSums[blockIdx.x];
 
 
 }
