@@ -33,20 +33,22 @@ __global__ void scan_kernel(float* input, float* output, float* partialSums, uns
     for (int stride = BLOCK_DIM / 2; stride > 0; stride /= 2) {
         __syncthreads();
         int index = (threadIdx.x + 1) * 2 * stride - 1;
-        if (index + stride < 2 * blockDim.x)
-            temp[index + stride] += temp[index];
+        if (index + stride < 2 * blockDim.x) {
+            float tmp = temp[index + stride];
+            temp[index + stride] = temp[index];
+            temp[index] += tmp;
+        }
     }
     __syncthreads();
 
     // Write to output and compute partial sums
     if (start + threadIdx.x < N)
-        output[start + threadIdx.x] = temp[threadIdx.x];
+        output[start + threadIdx.x] = (threadIdx.x == 0) ? 0 : temp[threadIdx.x - 1]; // Exclusive scan
     if (start + blockDim.x + threadIdx.x < N)
-        output[start + blockDim.x + threadIdx.x] = temp[blockDim.x + threadIdx.x];
+        output[start + blockDim.x + threadIdx.x] = temp[blockDim.x + threadIdx.x - 1];
 
     if (partialSums && threadIdx.x == 0)
         partialSums[blockIdx.x] = temp[2 * blockDim.x - 1];
-
 }
 
 __global__ void add_kernel(float* output, float* partialSums, unsigned int N) {
